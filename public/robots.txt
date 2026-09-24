@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+
+Sitemap: https://ai-pricing-live.gptpro200x.chatgpt.site/sitemap.xml

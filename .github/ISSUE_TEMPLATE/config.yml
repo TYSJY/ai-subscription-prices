@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 在线查价
+    url: https://ai-pricing-live.gptpro200x.chatgpt.site/?utm_source=github&utm_medium=issue_template&utm_campaign=ai-subscription-prices
+    about: 查看地区公开标价及参考换算。
+  - name: 订阅服务咨询（维护者商业服务）
+    url: https://gptpro20.com/?utm_source=github&utm_medium=issue_template&utm_campaign=ai-subscription-prices
+    about: 服务办理与订单问题请通过服务网站咨询。

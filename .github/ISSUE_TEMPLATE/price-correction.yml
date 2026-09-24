@@ -1,0 +1,38 @@
+name: 价格或税率纠错
+description: 提交可以核对来源的地区价格、汇率或税率问题
+title: "[数据纠错] "
+body:
+  - type: input
+    id: product
+    attributes:
+      label: 产品与套餐
+      placeholder: 例如 ChatGPT Plus 月付
+    validations:
+      required: true
+  - type: input
+    id: region
+    attributes:
+      label: 国家或地区、币种及渠道
+      placeholder: 例如 智利 / CLP / iOS App Store
+    validations:
+      required: true
+  - type: input
+    id: date
+    attributes:
+      label: 观察日期与时间
+    validations:
+      required: true
+  - type: textarea
+    id: difference
+    attributes:
+      label: 页面显示与预期差异
+      description: 请说明金额、周期和税费口径。
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: 公开来源链接
+      description: 请勿提交 Cookie、Session、账号密码、完整付款凭证或个人信息。
+    validations:
+      required: true
