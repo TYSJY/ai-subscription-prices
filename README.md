@@ -32,11 +32,15 @@ App Store 标价与网页订阅价可能不同。本项目不查询用户账户�
 
 “最低”仅指已取得、满足时效与比较条件的数据，不代表所有地区的最终可购买价格。
 
+**下一步：[填写订阅比价工作表](docs/SUBSCRIPTION-DECISION.md)**，核对账号适用条件、实付总额、权益周期和交付状态。附可下载的 CSV 空白表及明确标注的虚构算术示例；资料可独立使用，无需购买服务。
+
 ## 订阅协助服务
 
 本项目由 **TYSJY** 维护。维护者同时经营 **[gptpro20.com 订阅代充服务](https://gptpro20.com/?utm_source=github&utm_medium=readme&utm_campaign=ai-subscription-prices&utm_content=service)**。
 
 如需了解订阅办理方式和服务报价，可访问上述网站咨询。查价工具可独立使用，查询结果不构成服务报价。该服务属于维护者的商业业务；本项目及该服务不代表 OpenAI、Anthropic、Google 或 xAI 的官方渠道。
+
+维护者的 [订阅购买与到账核对指南](https://gptpro20.com/blog/gpt-topup-guide/) 说明套餐选择、结账金额及权益核对。`gptpro20.com` 与 `shop.shaihr.cn` 共用同一自营商城，不是两个独立报价渠道；是否购买由读者自行决定，具体商品条件与应付金额须在下单前核实。
 
 ## 本地运行
 
