@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseAmount, normalizePrices, convertAmount, rankRows, checkoutNetAmount, estimateTaxExclusive, comparisonRows} from '../lib/pricing-core.mjs';
+import {parseAmount, normalizePrices, convertAmount, rankRows, rankingUnavailableReason, checkoutNetAmount, estimateTaxExclusive, comparisonRows} from '../lib/pricing-core.mjs';
 import {taxRateFor} from '../lib/tax-rates.mjs';
 
 test('international price formats retain their true magnitude', () => {
@@ -20,6 +20,24 @@ test('currency conversion uses a shared USD base and never substitutes a missing
 test('a stale or unconvertible price cannot win the CNY ranking', () => {
   const rows=[{region:'US',fresh:true,cny:140},{region:'JP',fresh:false,cny:50},{region:'IN',fresh:true,cny:80},{region:'XX',fresh:true,cny:null}];
   assert.deepEqual(rankRows(rows).map(r=>r.region),['IN','US']);
+});
+
+test('empty rankings explain stale cached prices separately from missing prices and tax', () => {
+  const price = {region:'HK', channel:'ios', listingAmount:20, amount:20, usd:20, cny:140,
+    fresh:true, taxEstimate:estimateTaxExclusive({amount:20, usd:20, cny:140},{percent:0})};
+  const reason = (rows, basis='net') => rankingUnavailableReason(comparisonRows(rows,basis),basis);
+  assert.equal(reason([]),'missing-price');
+  assert.equal(reason([{...price,listingAmount:null,cny:null,taxEstimate:null}]),'missing-price');
+  assert.equal(reason([{...price,fresh:false}]),'cached-unavailable');
+  // Server fresh=false also covers unavailable FX despite a newly observed listing.
+  assert.equal(reason([{...price,observedAt:new Date().toISOString(),fresh:false,cny:null,
+    taxEstimate:{percent:0,amount:20,usd:20,cny:null}}]),'cached-unavailable');
+  assert.equal(reason([{...price,taxEstimate:{percent:null}}]),'missing-tax');
+  assert.equal(reason([{...price,taxEstimate:{percent:null}}],'gross'),null);
+  assert.equal(reason([{...price,fresh:false},{...price,taxEstimate:{percent:null}}]),'missing-tax');
+  assert.equal(reason([{...price,cny:null,taxEstimate:{percent:0,cny:null}}]),'incomplete-conversion');
+  assert.equal(reason([{...price,taxEstimate:{percent:null}},{...price,cny:null,taxEstimate:{percent:0,cny:null}}]),'incomplete-conversion');
+  assert.equal(reason([{...price,fresh:false},price]),null);
 });
 
 test('the Chile checkout uses its stated subtotal, not the plan display or a guessed tax deduction', () => {

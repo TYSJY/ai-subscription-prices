@@ -8,7 +8,7 @@ import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PRODUCTS, REGIONS, sourceFor, type Dashboard, type PriceRow } from "@/lib/catalog";
-import { rankRows, comparisonRows } from "@/lib/pricing-core.mjs";
+import { rankRows, comparisonRows, rankingUnavailableReason } from "@/lib/pricing-core.mjs";
 import { serviceUrl } from "@/lib/site-info";
 import { TAX_RATES, TAX_REVIEWED_AT } from "@/lib/tax-rates.mjs";
 
@@ -27,6 +27,12 @@ const time = (s: string | null | undefined) => s ? new Date(s).toLocaleString("z
 const cycle = (r?: PriceRow) => r?.cycle === "month" ? "月付" : r?.cycle === "year" ? "年付" : "周期未标注";
 const flag = (code: string) => String.fromCodePoint(...code.toUpperCase().split("").map(c => c.charCodeAt(0) + 127397));
 const errorMessage = (e: unknown) => e instanceof Error ? e.message : "暂时无法读取，请稍后重试。";
+const RANKING_HINT = {
+  "missing-price": "尚无该套餐的公开标价，可按需查询",
+  "cached-unavailable": "已有记录暂不可比，请查看下方状态",
+  "missing-tax": "参考税率未知，可切换原价比较",
+  "incomplete-conversion": "换算资料不完整，暂不能参与排名",
+};
 
 async function readResponse(response: Response): Promise<Dashboard> {
   if (!response.headers.get("content-type")?.includes("application/json")) throw new Error("服务暂时不可用，请稍后重试。");
@@ -47,7 +53,7 @@ export default function Home() {
   const [basis, setBasis] = useState<"net" | "gross">("net");
   const [product, setProduct] = useState("chatgpt"), [plan, setPlan] = useState(DEFAULT_PLAN.chatgpt);
   const [query, setQuery] = useState(""), [sort, setSort] = useState("cny");
-  const [auto, setAuto] = useState(true), [progress, setProgress] = useState<Progress | null>(null);
+  const [auto, setAuto] = useState(false), [progress, setProgress] = useState<Progress | null>(null);
   const [notice, setNotice] = useState("");
   const dataRef = useRef<Dashboard | null>(null), working = useRef(false), stop = useRef(false), mounted = useRef(true);
   function accept(next: Dashboard) { dataRef.current = next; if (mounted.current) setData(next); }
@@ -107,7 +113,6 @@ export default function Home() {
         const next = await readResponse(await fetch("/api/dashboard", { cache: "no-store", signal: AbortSignal.timeout(25000) }));
         if (!active) return;
         accept(next); setLoading(false);
-        if (channelRef.current === "ios") void updateProducts(PRODUCTS.map(p => p.id), false);
       } catch (e) { if (active) { setError(errorMessage(e)); setLoading(false); } }
     })();
     return () => { active = false; mounted.current = false; stop.current = true; };
@@ -187,12 +192,13 @@ export default function Home() {
             const valid = rankRows(options) as DisplayRow[];
             const reference = channel === "web" ? options.filter(r => r.cny != null && r.amount != null).sort((a,b) => a.cny!-b.cny!)[0] : undefined;
             const winner = valid[0] || reference;
+            const unavailable = rankingUnavailableReason(options, basis);
             const ties = winner ? valid.filter(r => Math.round(r.cny! * 100) === Math.round(winner.cny! * 100)) : [];
             const checked = data?.sources.filter(s => s.product === item.product && s.attemptedAt && s.status !== "pending").length || 0;
             return <button key={item.id} className={`winner-card ${index < 3 ? "featured" : ""} ${effectivePlan === itemPlan ? "selected" : ""}`} onClick={() => selectCard(item)}>
               <div className="winner-top"><span className={`product-mark ${item.product}`}>{PRODUCTS.find(p => p.id === item.product)?.mark}</span><strong>{item.label}</strong><ArrowUpRight size={17}/></div>
               <div className="winner-price">{winner ? <><span>¥</span>{money(winner.cny)}</> : <span className="waiting">{loading ? "读取中…" : channel === "web" ? "税前价待核实" : "暂无可比价格"}</span>}<small>{channel === "web" ? winner ? "月付 · 截图参考" : "结算参考" : basis === "net" ? "免税估算" : "原价换算"}</small></div>
-              <div className="winner-location">{winner ? <><span className="flag">{flag(winner.region)}</span><b title={ties.map(r => r.regionName).join("、")}>{winner.regionName}{ties.length > 1 ? ` 等 ${ties.length} 地区` : ""}</b><span>{winner.currency} {money(winner.amount)}</span></> : <span>{channel === "web" ? "缺少网页结算明细" : "等待该套餐的地区价格"}</span>}</div>
+              <div className="winner-location">{winner ? <><span className="flag">{flag(winner.region)}</span><b title={ties.map(r => r.regionName).join("、")}>{winner.regionName}{ties.length > 1 ? ` 等 ${ties.length} 地区` : ""}</b><span>{winner.currency} {money(winner.amount)}</span></> : <span>{loading ? "正在读取已保存结果" : channel === "web" ? "缺少网页结算明细" : unavailable ? RANKING_HINT[unavailable] : "暂无可比价格"}</span>}</div>
               {channel === "ios" && winner && <div className="winner-tax">原价 {winner.currency} {money(winner.listingAmount)} · 参考税率 {winner.taxEstimate?.label || "待补充"}<small>{cycle(winner)}</small></div>}
               <div className="winner-bottom"><span>{winner ? `≈ US$ ${money(winner.usd)}` : "—"}</span><span>{channel === "web" ? options.length ? `${options.length} 地区参考 · 不代表最低` : "未参与税前排名" : `可比 ${valid.length} · 已查 ${checked}/${REGIONS.length}`}</span></div>
             </button>;
@@ -200,7 +206,7 @@ export default function Home() {
           <p className="ranking-note">{channel === "web" ? "截图报价保留原始提供日期，刷新汇率不改变报价日期；本记录不参与实时最低价排名。" : `排名覆盖已取得的同名同档价格，采用 ${data?.freshHours || 6} 小时内有效标价与可用汇率。${basis === "net" ? "缺少可计算税率的地区保留原价，不参与免税估算排名。" : "当前卡片和排名使用原价，税前估值仍在表格旁列显示。"}`}</p>
         </section>
 
-        <section className="service-bridge" aria-label="订阅办理服务"><div><span className="service-overline">GPT国际订阅 · gptpro20.com</span><strong>选好套餐，需要代充？</strong><p>查看 ChatGPT、Claude、Gemini、Grok 订阅与代充服务。这里的公开价格用于地区比较，服务报价以商城商品及订单确认为准。</p></div><a href={serviceUrl("comparison", product)} target="_blank" rel="noopener noreferrer sponsored">查看订阅代充服务 <ArrowUpRight size={17}/></a></section>
+        <section className="service-bridge" aria-label="订阅办理服务"><div><span className="service-overline">哈基米AI社区 · gptpro20.com</span><strong>选好套餐，需要代充？</strong><p>查看 ChatGPT、Claude、Gemini、Grok 订阅与代充服务。这里的公开价格用于地区比较，服务报价以商城商品及订单确认为准。</p></div><a href={serviceUrl("comparison", product)} target="_blank" rel="noopener noreferrer sponsored">查看订阅代充服务 <ArrowUpRight size={17}/></a></section>
 
         <section id="comparison" className="comparison-panel" aria-labelledby="comparison-heading">
           <div className="comparison-title"><div><div className="eyebrow">REGIONAL PRICE COMPARISON</div><h2 id="comparison-heading">各国家与地区价格</h2></div><Button variant="outline" disabled={!!progress || loading} onClick={() => updateProducts([product], true)}><RefreshCw size={14}/>{channel === "web" ? "更新参考汇率" : "更新当前产品"}</Button></div>
@@ -232,14 +238,14 @@ export default function Home() {
           })}</div></details>
         </section>
         <section id="checkout-evidence" className="checkout-evidence"><h2>智利 Pro 5x · 本次结算依据</h2><p>来源：用户于 2026-09-20 提供的网页结算截图，月付 5x。截图未注明拍摄时间，未独立在线复核。</p><dl><div><dt>套餐展示价</dt><dd>CLP 102,990</dd></div><div><dt>Monthly subscription</dt><dd>CLP 86,365</dd></div><div><dt>Sales Tax (0%)</dt><dd>CLP 0</dd></div><div><dt>Due today</dt><dd>CLP 86,365</dd></div></dl><p>本记录按 CLP 86,365 换算。展示价与结算小计的差异原因未核实，不据此推算其他国家或其他套餐的免税价。</p></section>
-        <section id="method" className="method"><div><h3>免税估算怎么计算</h3><p>把原表标价按含参考税率处理，除以（1＋税率），再换算美元与人民币。估算用于比较，不代表实际结算必然免税；未设置税率时保留原价。</p></div><div><h3>税率与结算依据</h3><p>参考 <a href="https://taxsummaries.pwc.com/quick-charts/value-added-tax-vat-rates" target="_blank" rel="noreferrer">PwC 税率资料</a>、<a href="https://europa.eu/youreurope/business/finance-and-tax/vat/vat-rules-rates/index_en.htm" target="_blank" rel="noreferrer">欧盟官方税率表</a>及当地税务机关，核查日期 {TAX_REVIEWED_AT}。每行税率可点击查看来源。网页结算截图另行展示，不混入 App Store 估算排名。</p></div><div><h3>价格与汇率更新</h3><p><a href="https://www.exchangerate-api.com" target="_blank" rel="noreferrer">Rates By Exchange Rate API ↗</a> 提供每日参考汇率。开启自动更新后，页面打开期间每 30 分钟查询价格；刷新价格和汇率不改变税率核查日期。实际扣款可能包含渠道汇差与手续费。</p></div></section>
+        <section id="method" className="method"><div><h3>免税估算怎么计算</h3><p>把原表标价按含参考税率处理，除以（1＋税率），再换算美元与人民币。估算用于比较，不代表实际结算必然免税；未设置税率时保留原价。</p></div><div><h3>税率与结算依据</h3><p>参考 <a href="https://taxsummaries.pwc.com/quick-charts/value-added-tax-vat-rates" target="_blank" rel="noreferrer">PwC 税率资料</a>、<a href="https://europa.eu/youreurope/business/finance-and-tax/vat/vat-rules-rates/index_en.htm" target="_blank" rel="noreferrer">欧盟官方税率表</a>及当地税务机关，核查日期 {TAX_REVIEWED_AT}。每行税率可点击查看来源。网页结算截图另行展示，不混入 App Store 估算排名。</p></div><div><h3>价格与汇率更新</h3><p><a href="https://www.exchangerate-api.com" target="_blank" rel="noreferrer">Rates By Exchange Rate API ↗</a> 提供每日参考汇率。默认只读取已保存价格，可用更新按钮按需查询。开启自动更新后，页面打开期间每 30 分钟查询价格；刷新价格和汇率不改变税率核查日期。实际扣款可能包含渠道汇差与手续费。</p></div></section>
         <section className="pricing-faq" aria-labelledby="faq-heading"><h2 id="faq-heading">使用前，你可能想了解</h2>
           <details><summary>这些价格是网页订阅价格吗？</summary><p>默认数据来自各地区 Apple App Store 公开内购列表。网页订阅、App Store 和代充服务属于不同购买渠道，价格与可用套餐可能不同；可在上方切换查看单独收录的网页结算记录。</p></details>
           <details><summary>税前估算最低的地区，就能按这个金额购买吗？</summary><p>不一定。估算按“原价已含参考税率”的假设计算，并不表示具备免税资格。排名只覆盖已查询且可比较的地区，实际可购买地区、周期、税额和手续费以结算页面为准。</p></details>
-          <details><summary>价格多久更新，需要登录账号吗？</summary><p>查询无需登录 AI 账号。页面会先读取已保存结果；开启自动更新后，在页面打开期间每 30 分钟尝试查询。遇到来源限流会暂停，超过有效期的价格不参与最低价排名。</p></details>
+          <details><summary>价格多久更新，需要登录账号吗？</summary><p>查询无需登录 AI 账号。页面默认只读取已保存价格，不自动启动地区查询；可按需更新当前产品或全部地区。开启自动更新后，在页面打开期间每 30 分钟尝试查询。遇到来源限流会暂停，超过有效期的价格不参与最低价排名。</p></details>
           <details><summary>选好套餐后，在哪里查看代充服务？</summary><p>可前往 <a href={serviceUrl("faq", product)} target="_blank" rel="noopener noreferrer sponsored">gptpro20.com 查看订阅代充服务</a>，确认商品套餐、适用条件和交付说明后再下单。本工具的价格估值不是代充报价。</p></details>
         </section>
-        <footer className="page-footer"><span>订阅观察 · 由 <a href={serviceUrl("footer")} target="_blank" rel="noopener noreferrer sponsored">GPT国际订阅</a> 维护</span><span>独立价格比较工具，与各 AI 产品官方及 Apple 无隶属关系。</span></footer>
+        <footer className="page-footer"><span>订阅观察 · 由 <a href={serviceUrl("footer")} target="_blank" rel="noopener noreferrer sponsored">哈基米AI社区</a> 维护</span><span>独立价格比较工具，与各 AI 产品官方及 Apple 无隶属关系。</span></footer>
       </div>
     </main>
   </div>;
